@@ -1,4 +1,4 @@
-package com.qsong.filemanagerdemo.ui.theme
+package com.qsong.filemanagerdemo.presentation.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
