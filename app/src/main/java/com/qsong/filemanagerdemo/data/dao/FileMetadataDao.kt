@@ -18,7 +18,7 @@ interface FileMetadataDao {
     @Query("SELECT * FROM file_metadata")
     suspend fun getAllMetadata(): List<FileMetadata>
 
-    @Query("SELECT * FROM file_metadata WHERE fileName = :fileName LIMIT 1")
+    @Query("SELECT * FROM file_metadata WHERE name = :fileName LIMIT 1")
     suspend fun getMetadataByFileName(fileName: String): FileMetadata?
 
     @Query("DELETE FROM file_metadata WHERE filePath = :filePath")
