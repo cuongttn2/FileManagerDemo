@@ -1,34 +1,56 @@
 package com.qsong.filemanagerdemo.domain.usecase
 
+import android.graphics.Bitmap
 import com.qsong.filemanagerdemo.data.repository.FileRepository
 import com.qsong.filemanagerdemo.domain.model.FileItem
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 class FileUseCase @Inject constructor(
-    private val repository: FileRepository
+    private val fileRepository: FileRepository,
 ) {
 
-    fun createTextFile(name: String): FileItem {
-        return repository.createTextFile(name)
+    // Create a text file and insert metadata
+    suspend fun createTextFile(fileName: String) = withContext(Dispatchers.IO) {
+        fileRepository.createTextFile(fileName)
     }
 
-    fun createImageFile(): FileItem {
-        return repository.createImageFile()
+    // Capture and save an image file
+    suspend fun captureScreenAndSaveImageFile(bitmap: Bitmap) = withContext(Dispatchers.IO) {
+        fileRepository.saveImageFile(bitmap, generateFileName())
     }
 
-    fun getAllTextFiles(): List<FileItem> {
-        return repository.getAllTextFiles()
+    // Get all metadata (for both text and image files)
+    suspend fun getAllFiles(): List<FileItem> = withContext(Dispatchers.IO) {
+        val metadataList = fileRepository.getAllMetadata()
+        metadataList.map { metadata ->
+            FileItem(
+                name = metadata.fileName,
+                path = metadata.filePath,
+                type = metadata.fileType,
+                isStared = metadata.isStared
+            )
+        }
     }
 
-    fun getAllImageFiles(): List<FileItem> {
-        return repository.getAllImageFiles()
+    // Clean up orphaned metadata
+    suspend fun cleanUpOrphanedMetadata() = withContext(Dispatchers.IO) {
+        fileRepository.cleanUpOrphanedMetadata()
     }
 
-    fun toggleTag(fileName: String) {
-        repository.toggleTag(fileName)
+    // Toggle the star status of a file
+    suspend fun toggleStar(fileName: String) = withContext(Dispatchers.IO) {
+        fileRepository.toggleStar(fileName)
     }
 
-    fun isStared(fileName: String): Boolean {
-        return repository.isStared(fileName)
+    // Check if a file is starred
+    suspend fun isStared(fileName: String): Boolean = withContext(Dispatchers.IO) {
+        fileRepository.isStared(fileName)
+    }
+
+    // Helper function to generate a unique file name for images
+    private fun generateFileName(): String {
+        return "image_${System.currentTimeMillis()}"
     }
 }

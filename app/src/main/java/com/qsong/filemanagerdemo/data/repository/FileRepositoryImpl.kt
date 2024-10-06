@@ -1,234 +1,101 @@
 package com.qsong.filemanagerdemo.data.repository
 
-import android.content.ContentValues
 import android.content.Context
-import android.net.Uri
+import android.graphics.Bitmap
 import android.os.Environment
-import android.provider.MediaStore
-import android.util.Log
-import androidx.core.content.FileProvider
-import com.qsong.filemanagerdemo.R
+import com.qsong.filemanagerdemo.data.dao.FileMetadataDao
+import com.qsong.filemanagerdemo.data.model.FileMetadata
 import com.qsong.filemanagerdemo.domain.model.FileItem
-import com.qsong.filemanagerdemo.domain.model.FileMetadata
 import com.qsong.filemanagerdemo.utils.AppEnvironment
 import com.qsong.filemanagerdemo.utils.FileType
 import com.qsong.filemanagerdemo.utils.MimeTypes
-import com.qsong.filemanagerdemo.utils.VolumeName
-import com.qsong.filemanagerdemo.utils.queryFileName
-import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.serialization.json.Json
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 import javax.inject.Inject
 
 class FileRepositoryImpl @Inject constructor(
-    @ApplicationContext private val context: Context,
+    private val context: Context,
+    private val fileMetadataDao: FileMetadataDao,
 ) : FileRepository {
 
-    // Make sure the directory exists
-    private fun ensureDirectoryExists(directory: File?) {
-        if (directory != null && !directory.exists()) {
-            directory.mkdirs()
-        }
-    }
+    override suspend fun createTextFile(fileName: String): FileItem = withContext(Dispatchers.IO) {
+        val path =
+            "${Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)}/${fileName}${MimeTypes.Text.PLAIN.extensions[0]}"
+        val file = File(path)
+        file.writeText("Sample content for $fileName")
 
-    // Create text files using MediaStore (Scoped Storage)
-    override fun createTextFile(fileName: String): FileItem {
-        val contentValues = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, fileName) // file name
-            put(MediaStore.MediaColumns.MIME_TYPE, MimeTypes.Text.PLAIN.mimeType) // MIME type
-            put(
-                MediaStore.MediaColumns.RELATIVE_PATH,
-                "${Environment.DIRECTORY_DOCUMENTS}/${context.getString(R.string.app_name)}/${AppEnvironment.DOCUMENTS}"
-            ) // Public directory
-        }
+        val fileItem =
+            FileItem(name = fileName, path = path, type = FileType.TEXT, isStared = false)
 
-        val resolver = context.contentResolver
-        val uri: Uri? =
-            resolver.insert(MediaStore.Files.getContentUri(VolumeName.EXTERNAL), contentValues)
-
-        uri?.let { fileUri ->
-            resolver.openOutputStream(fileUri)?.use { outputStream ->
-                outputStream.write("Hello!!\n This is sample text content".toByteArray()) // Write content to file
-            }
-
-            val realFileName = resolver.queryFileName(fileUri)
-                ?: "${fileName}${MimeTypes.Text.PLAIN.extensions[0]}"
-
-            // Get the absolute path if needed
-            val path = fileUri.path ?: ""
-            Log.d("FileMetadata", "createTextFile: $realFileName")
-            val metadata = FileMetadata(fileName = realFileName)
-            saveMetadata(metadata) // Ensure metadata is saved when the file is created
-
-            return FileItem(name = fileName, path = path, type = FileType.TEXT)
-        }
-
-        throw IOException("Failed to create file")
-    }
-
-    // Create image files using MediaStore (Scoped Storage)
-    override fun createImageFile(): FileItem {
-        val fileName = System.currentTimeMillis()
-        val contentValues = ContentValues().apply {
-            put(
-                MediaStore.MediaColumns.DISPLAY_NAME,
-                "image_${fileName}"
-            ) // File name
-            put(MediaStore.MediaColumns.MIME_TYPE, MimeTypes.Image.JPEG.mimeType) // MIME type
-            put(
-                MediaStore.MediaColumns.RELATIVE_PATH,
-                "${Environment.DIRECTORY_PICTURES}/${context.getString(R.string.app_name)}/${AppEnvironment.PICTURES}"
-            ) // Public directory
-        }
-
-        val resolver = context.contentResolver
-        val uri: Uri? = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
-
-        uri?.let { fileUri ->
-            resolver.openOutputStream(fileUri)?.use { outputStream ->
-                // Record image data here, for example a Bitmap image if available
-            }
-
-            val realFileName = resolver.queryFileName(fileUri)
-                ?: "image_${fileName}${MimeTypes.Image.JPEG.extensions[1]}"
-
-            // Get the absolute path if needed
-            val path = fileUri.path ?: ""
-            val metadata = FileMetadata(fileName = realFileName)
-            saveMetadata(metadata)  // Ensure metadata is saved when the file is created
-
-            return FileItem(
-                name = "image_${fileName}${MimeTypes.Image.JPEG.extensions[1]}",
-                path = path,
-                type = FileType.IMAGE
+        // Call the suspend insertMetadata function
+        insertMetadata(
+            FileMetadata(
+                file.path, fileName, false, FileType.TEXT, System.currentTimeMillis()
             )
-        }
-
-        throw IOException("Failed to create image file")
+        )
+        fileItem
     }
 
-    // Get all text files from MediaStore
-    override fun getAllTextFiles(): List<FileItem> {
-        val projection = arrayOf(
-            MediaStore.MediaColumns.DISPLAY_NAME,
-            MediaStore.MediaColumns.DATA // File path
-        )
+    override suspend fun insertMetadata(metadata: FileMetadata) {
+        fileMetadataDao.insert(metadata)
+    }
 
-        val selection = "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?"
-        val selectionArgs =
-            arrayOf("${Environment.DIRECTORY_DOCUMENTS}/${context.getString(R.string.app_name)}/${AppEnvironment.DOCUMENTS}%")
+    override suspend fun getAllMetadata(): List<FileMetadata> {
+        return fileMetadataDao.getAllMetadata()
+    }
 
-        val cursor = context.contentResolver.query(
-            MediaStore.Files.getContentUri(VolumeName.EXTERNAL),
-            projection,
-            selection,
-            selectionArgs,
-            null
-        )
-
-        val fileItems = mutableListOf<FileItem>()
-        cursor?.use {
-            val nameColumn = it.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
-            val dataColumn = it.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA)
-
-            while (it.moveToNext()) {
-                val fileName = it.getString(nameColumn)
-                val filePath = it.getString(dataColumn)
-                fileItems.add(FileItem(name = fileName, path = filePath, type = FileType.TEXT))
+    override suspend fun cleanUpOrphanedMetadata() = withContext(Dispatchers.IO) {
+        val metadataList = fileMetadataDao.getAllMetadata()
+        metadataList.forEach {
+            val file = File(it.filePath)
+            if (!file.exists()) {
+                fileMetadataDao.deleteMetadataByPath(it.filePath)
             }
         }
-        return fileItems
     }
 
-    //  Get all image files from MediaStore
-    override fun getAllImageFiles(): List<FileItem> {
-        val projection = arrayOf(
-            MediaStore.MediaColumns.DISPLAY_NAME,
-            MediaStore.MediaColumns.DATA // File path
-        )
+    override suspend fun toggleStar(fileName: String): Unit = withContext(Dispatchers.IO) {
+        fileMetadataDao.getMetadataByFileName(fileName)?.let {
+            val metadata = it.copy(isStared = !it.isStared)
+            fileMetadataDao.update(metadata)
+        }
+    }
 
-        val selection = "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?"
-        val selectionArgs =
-            arrayOf("${Environment.DIRECTORY_PICTURES}/${context.getString(R.string.app_name)}/${AppEnvironment.PICTURES}%")
+    override suspend fun isStared(fileName: String): Boolean = withContext(Dispatchers.IO) {
+        val metadata = fileMetadataDao.getMetadataByFileName(fileName)
+        metadata?.isStared ?: false
+    }
 
-        val cursor = context.contentResolver.query(
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            projection,
-            selection,
-            selectionArgs,
-            null
-        )
+    override suspend fun saveImageFile(bitmap: Bitmap, fileName: String): File? =
+        withContext(Dispatchers.IO) {
+            val directory = File(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+                "${context.packageName}/${AppEnvironment.PICTURES}"
+            )
+            if (!directory.exists()) {
+                directory.mkdirs()
+            }
+            val imageFile = File(directory, "${fileName}${MimeTypes.Image.JPEG.extensions[1]}")
+            try {
+                val outputStream = FileOutputStream(imageFile)
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream)
+                outputStream.flush()
+                outputStream.close()
 
-        val fileItems = mutableListOf<FileItem>()
-        cursor?.use {
-            val nameColumn = it.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
-            val dataColumn = it.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA)
+                // Insert metadata after saving the image
+                insertMetadata(
+                    FileMetadata(
+                        imageFile.path, fileName, false, FileType.IMAGE, System.currentTimeMillis()
+                    )
+                )
 
-            while (it.moveToNext()) {
-                val fileName = it.getString(nameColumn)
-                val filePath = it.getString(dataColumn)
-                fileItems.add(FileItem(name = fileName, path = filePath, type = FileType.IMAGE))
+                imageFile
+            } catch (e: IOException) {
+                e.printStackTrace()
+                null
             }
         }
-        return fileItems
-    }
-
-    // Save metadata file
-    private fun saveMetadata(metadata: FileMetadata) {
-        val metaDir = context.getExternalFilesDir(AppEnvironment.META_DATA)
-        ensureDirectoryExists(metaDir) // Make sure the directory exists
-        val metaFile = File(metaDir, "${metadata.fileName}${MimeTypes.MetaData.META.extensions[0]}")
-
-        val json = Json.encodeToString(FileMetadata.serializer(), metadata)
-        metaFile.writeText(json)
-    }
-
-    // Read metadata file
-    private fun getMetadata(fileName: String): FileMetadata? {
-        val metaDir = context.getExternalFilesDir(AppEnvironment.META_DATA)
-        ensureDirectoryExists(metaDir)
-        val metaFile = File(metaDir, "${fileName}${MimeTypes.MetaData.META.extensions[0]}")
-
-        return if (metaFile.exists()) {
-            val json = metaFile.readText()
-            Json.decodeFromString(json)
-        } else {
-            null
-        }
-    }
-
-    // change 'isStared' status
-    override fun toggleTag(fileName: String) {
-        var metadata = getMetadata(fileName)
-
-        // If 'metadata' not exist, create new 'metadata'
-        if (metadata == null) {
-            metadata = FileMetadata(
-                fileName = fileName,
-                isStared = true
-            ) // Create new 'metadata', isTagged = true
-            Log.d("Metadata", "Created new metadata for: $fileName")
-        } else {
-            // Change 'stared' status if 'metadata' existed'
-            metadata.isStared = !metadata.isStared
-            Log.d("Metadata", "toggleStar: ${metadata.isStared}")
-        }
-
-        // Save 'metadata' after update
-        saveMetadata(metadata)
-    }
-
-    // check 'isStared'
-    override fun isStared(fileName: String): Boolean {
-        val metadata = getMetadata(fileName)
-        Log.d("Metadata", "metadata-impl: $metadata")
-        return metadata?.isStared ?: false
-    }
-
-    // share file, using FileProvider
-    fun shareFile(fileName: String): Uri {
-        val file = File(context.getExternalFilesDir(AppEnvironment.DOCUMENTS), fileName)
-        return FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
-    }
 }

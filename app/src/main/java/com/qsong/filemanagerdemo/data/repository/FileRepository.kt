@@ -1,12 +1,16 @@
 package com.qsong.filemanagerdemo.data.repository
 
+import android.graphics.Bitmap
+import com.qsong.filemanagerdemo.data.model.FileMetadata
 import com.qsong.filemanagerdemo.domain.model.FileItem
+import java.io.File
 
 interface FileRepository {
-    fun createTextFile(fileName: String): FileItem
-    fun createImageFile(): FileItem
-    fun getAllTextFiles(): List<FileItem>
-    fun getAllImageFiles(): List<FileItem>
-    fun toggleTag(fileName: String)
-    fun isStared(fileName: String): Boolean
+    suspend fun createTextFile(fileName: String): FileItem
+    suspend fun insertMetadata(metadata: FileMetadata)
+    suspend fun getAllMetadata(): List<FileMetadata>
+    suspend fun cleanUpOrphanedMetadata()
+    suspend fun toggleStar(fileName: String)
+    suspend fun isStared(fileName: String): Boolean
+    suspend fun saveImageFile(bitmap: Bitmap, fileName: String): File?
 }

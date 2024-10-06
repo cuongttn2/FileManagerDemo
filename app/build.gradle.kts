@@ -78,6 +78,11 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
 
+    // Room dependencies
+    implementation(libs.room.runtime) // Room runtime
+    implementation(libs.room.ktx) // Room KTX for coroutines support
+    ksp(libs.room.compiler) // Room compiler for KSP
+
     // Hilt
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)

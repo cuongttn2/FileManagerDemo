@@ -1,71 +1,66 @@
 package com.qsong.filemanagerdemo.presentation.viewmodel.file_manger
 
-import android.util.Log
+import android.graphics.Bitmap
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.qsong.filemanagerdemo.di.ApplicationScopeIO
 import com.qsong.filemanagerdemo.domain.usecase.FileUseCase
-import com.qsong.filemanagerdemo.presentation.viewmodel.base.BaseViewModel
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
 class FileManagerViewModel @Inject constructor(
     private val fileUseCase: FileUseCase,
-    @ApplicationScopeIO private val appScope: CoroutineScope,
-) : BaseViewModel() {
+) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(FileManagerState())
-    val uiState: StateFlow<FileManagerState> = _uiState
+    private val _fileManagerState = MutableStateFlow(FileManagerState())
+    val fileManagerState: StateFlow<FileManagerState> = _fileManagerState
 
-    init {
-        appScope.launch(Dispatchers.IO) {
+    fun loadFiles() {
+        viewModelScope.launch {
+            val files = fileUseCase.getAllFiles()
+            _fileManagerState.value = FileManagerState(
+                textFiles = files.filter { it.type == "text" },
+                imageFiles = files.filter { it.type == "image" }
+            )
+        }
+    }
+
+    fun createTextFile(fileName: String) {
+        viewModelScope.launch {
+            fileUseCase.createTextFile(fileName)
+            loadFiles() // Reload files after creating a new one
+        }
+    }
+
+    fun captureScreenAndSaveImageFile(bitmap: Bitmap) {
+        viewModelScope.launch {
+            fileUseCase.captureScreenAndSaveImageFile(bitmap)
+            loadFiles() // Refresh the file list after saving the image
+        }
+    }
+
+    fun toggleStar(fileName: String) {
+        viewModelScope.launch {
+            fileUseCase.toggleStar(fileName)
+            loadFiles() // Reload files after toggling the star status
+        }
+    }
+
+    suspend fun isStared(fileName: String): Boolean {
+        val result = viewModelScope.async {
+            fileUseCase.isStared(fileName)
+        }
+        return result.await()
+    }
+
+    fun cleanUpOrphanedMetadata() {
+        viewModelScope.launch {
+            fileUseCase.cleanUpOrphanedMetadata()
             loadFiles()
         }
-    }
-
-    private fun loadFiles() {
-        viewModelScope.launch(Dispatchers.Main) {
-            val textFiles = async(Dispatchers.IO) { fileUseCase.getAllTextFiles() }
-            val imageFiles = async(Dispatchers.IO) { fileUseCase.getAllImageFiles() }
-            _uiState.update {
-                it.copy(
-                    textFiles = textFiles.await(),
-                    imageFiles = imageFiles.await()
-                )
-            }
-        }
-    }
-
-    fun createTextFile(name: String) {
-        appScope.launch(Dispatchers.IO) {
-            fileUseCase.createTextFile(name)
-            loadFiles()
-        }
-    }
-
-    fun createImageFile() {
-        appScope.launch(Dispatchers.IO) {
-            fileUseCase.createImageFile()
-            loadFiles()
-        }
-    }
-
-    fun toggleTag(fileName: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            fileUseCase.toggleTag(fileName)
-            loadFiles()
-        }
-    }
-
-    fun isStared(fileName: String): Boolean {
-        Log.d("Metadata", "isStared-vm: ${fileUseCase.isStared(fileName)}")
-        return fileUseCase.isStared(fileName)
     }
 }

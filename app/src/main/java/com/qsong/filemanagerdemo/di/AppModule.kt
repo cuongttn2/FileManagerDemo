@@ -1,6 +1,7 @@
 package com.qsong.filemanagerdemo.di
 
 import android.content.Context
+import com.qsong.filemanagerdemo.data.dao.FileMetadataDao
 import com.qsong.filemanagerdemo.data.repository.FileRepository
 import com.qsong.filemanagerdemo.data.repository.FileRepositoryImpl
 import com.qsong.filemanagerdemo.domain.usecase.FileUseCase
@@ -17,8 +18,11 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideFileRepository(@ApplicationContext context: Context): FileRepository {
-        return FileRepositoryImpl(context)
+    fun provideFileRepository(
+        @ApplicationContext context: Context,
+        fileMetadataDao: FileMetadataDao,
+    ): FileRepository {
+        return FileRepositoryImpl(context, fileMetadataDao)
     }
 
     @Provides
