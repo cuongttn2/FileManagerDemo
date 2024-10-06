@@ -1,15 +1,20 @@
 package com.qsong.filemanagerdemo.data.repository
 
-import android.content.ContentResolver
 import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
+import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
 import androidx.core.content.FileProvider
 import com.qsong.filemanagerdemo.R
 import com.qsong.filemanagerdemo.domain.model.FileItem
 import com.qsong.filemanagerdemo.domain.model.FileMetadata
+import com.qsong.filemanagerdemo.utils.AppEnvironment
+import com.qsong.filemanagerdemo.utils.FileType
+import com.qsong.filemanagerdemo.utils.MimeTypes
+import com.qsong.filemanagerdemo.utils.VolumeName
+import com.qsong.filemanagerdemo.utils.queryFileName
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -31,22 +36,24 @@ class FileRepositoryImpl @Inject constructor(
     override fun createTextFile(fileName: String): FileItem {
         val contentValues = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, fileName) // file name
-            put(MediaStore.MediaColumns.MIME_TYPE, "text/plain") // MIME type
+            put(MediaStore.MediaColumns.MIME_TYPE, MimeTypes.Text.PLAIN.mimeType) // MIME type
             put(
                 MediaStore.MediaColumns.RELATIVE_PATH,
-                "Documents/${context.getString(R.string.app_name)}/documents"
+                "${Environment.DIRECTORY_DOCUMENTS}/${context.getString(R.string.app_name)}/${AppEnvironment.DOCUMENTS}"
             ) // Public directory
         }
 
         val resolver = context.contentResolver
-        val uri: Uri? = resolver.insert(MediaStore.Files.getContentUri("external"), contentValues)
+        val uri: Uri? =
+            resolver.insert(MediaStore.Files.getContentUri(VolumeName.EXTERNAL), contentValues)
 
         uri?.let { fileUri ->
             resolver.openOutputStream(fileUri)?.use { outputStream ->
                 outputStream.write("Hello!!\n This is sample text content".toByteArray()) // Write content to file
             }
 
-            val realFileName = resolver.queryFileName(fileUri) ?: "${fileName}.txt"
+            val realFileName = resolver.queryFileName(fileUri)
+                ?: "${fileName}${MimeTypes.Text.PLAIN.extensions[0]}"
 
             // Get the absolute path if needed
             val path = fileUri.path ?: ""
@@ -54,23 +61,10 @@ class FileRepositoryImpl @Inject constructor(
             val metadata = FileMetadata(fileName = realFileName)
             saveMetadata(metadata) // Ensure metadata is saved when the file is created
 
-            return FileItem(name = fileName, path = path, type = "text")
+            return FileItem(name = fileName, path = path, type = FileType.TEXT)
         }
 
         throw IOException("Failed to create file")
-    }
-
-    private fun ContentResolver.queryFileName(fileUri: Uri): String? {
-        // Re-query the actual file name from the URI after inserting
-        val cursor =
-            this.query(fileUri, arrayOf(MediaStore.MediaColumns.DISPLAY_NAME), null, null, null)
-        val realFileName = if (cursor != null && cursor.moveToFirst()) {
-            cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME))
-        } else {
-            null // In case you cannot get the file name, reuse the original name
-        }
-        cursor?.close()
-        return realFileName
     }
 
     // Create image files using MediaStore (Scoped Storage)
@@ -81,10 +75,10 @@ class FileRepositoryImpl @Inject constructor(
                 MediaStore.MediaColumns.DISPLAY_NAME,
                 "image_${fileName}"
             ) // File name
-            put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg") // MIME type
+            put(MediaStore.MediaColumns.MIME_TYPE, MimeTypes.Image.JPEG.mimeType) // MIME type
             put(
                 MediaStore.MediaColumns.RELATIVE_PATH,
-                "Pictures/${context.getString(R.string.app_name)}/pictures"
+                "${Environment.DIRECTORY_PICTURES}/${context.getString(R.string.app_name)}/${AppEnvironment.PICTURES}"
             ) // Public directory
         }
 
@@ -96,14 +90,19 @@ class FileRepositoryImpl @Inject constructor(
                 // Record image data here, for example a Bitmap image if available
             }
 
-            val realFileName = resolver.queryFileName(fileUri) ?: "image_${fileName}.jpg"
+            val realFileName = resolver.queryFileName(fileUri)
+                ?: "image_${fileName}${MimeTypes.Image.JPEG.extensions[1]}"
 
             // Get the absolute path if needed
             val path = fileUri.path ?: ""
             val metadata = FileMetadata(fileName = realFileName)
             saveMetadata(metadata)  // Ensure metadata is saved when the file is created
 
-            return FileItem(name = "image_${fileName}.jpg", path = path, type = "image")
+            return FileItem(
+                name = "image_${fileName}${MimeTypes.Image.JPEG.extensions[1]}",
+                path = path,
+                type = FileType.IMAGE
+            )
         }
 
         throw IOException("Failed to create image file")
@@ -117,10 +116,11 @@ class FileRepositoryImpl @Inject constructor(
         )
 
         val selection = "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?"
-        val selectionArgs = arrayOf("Documents/${context.getString(R.string.app_name)}/documents%")
+        val selectionArgs =
+            arrayOf("${Environment.DIRECTORY_DOCUMENTS}/${context.getString(R.string.app_name)}/${AppEnvironment.DOCUMENTS}%")
 
         val cursor = context.contentResolver.query(
-            MediaStore.Files.getContentUri("external"),
+            MediaStore.Files.getContentUri(VolumeName.EXTERNAL),
             projection,
             selection,
             selectionArgs,
@@ -135,7 +135,7 @@ class FileRepositoryImpl @Inject constructor(
             while (it.moveToNext()) {
                 val fileName = it.getString(nameColumn)
                 val filePath = it.getString(dataColumn)
-                fileItems.add(FileItem(name = fileName, path = filePath, type = "text"))
+                fileItems.add(FileItem(name = fileName, path = filePath, type = FileType.TEXT))
             }
         }
         return fileItems
@@ -149,7 +149,8 @@ class FileRepositoryImpl @Inject constructor(
         )
 
         val selection = "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?"
-        val selectionArgs = arrayOf("Pictures/${context.getString(R.string.app_name)}/pictures%")
+        val selectionArgs =
+            arrayOf("${Environment.DIRECTORY_PICTURES}/${context.getString(R.string.app_name)}/${AppEnvironment.PICTURES}%")
 
         val cursor = context.contentResolver.query(
             MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
@@ -167,7 +168,7 @@ class FileRepositoryImpl @Inject constructor(
             while (it.moveToNext()) {
                 val fileName = it.getString(nameColumn)
                 val filePath = it.getString(dataColumn)
-                fileItems.add(FileItem(name = fileName, path = filePath, type = "image"))
+                fileItems.add(FileItem(name = fileName, path = filePath, type = FileType.IMAGE))
             }
         }
         return fileItems
@@ -175,9 +176,9 @@ class FileRepositoryImpl @Inject constructor(
 
     // Save metadata file
     private fun saveMetadata(metadata: FileMetadata) {
-        val metaDir = context.getExternalFilesDir("metadata")
+        val metaDir = context.getExternalFilesDir(AppEnvironment.META_DATA)
         ensureDirectoryExists(metaDir) // Make sure the directory exists
-        val metaFile = File(metaDir, "${metadata.fileName}.meta")
+        val metaFile = File(metaDir, "${metadata.fileName}${MimeTypes.MetaData.META.extensions[0]}")
 
         val json = Json.encodeToString(FileMetadata.serializer(), metadata)
         metaFile.writeText(json)
@@ -185,9 +186,9 @@ class FileRepositoryImpl @Inject constructor(
 
     // Read metadata file
     private fun getMetadata(fileName: String): FileMetadata? {
-        val metaDir = context.getExternalFilesDir("metadata")
+        val metaDir = context.getExternalFilesDir(AppEnvironment.META_DATA)
         ensureDirectoryExists(metaDir)
-        val metaFile = File(metaDir, "$fileName.meta")
+        val metaFile = File(metaDir, "${fileName}${MimeTypes.MetaData.META.extensions[0]}")
 
         return if (metaFile.exists()) {
             val json = metaFile.readText()
@@ -227,7 +228,7 @@ class FileRepositoryImpl @Inject constructor(
 
     // share file, using FileProvider
     fun shareFile(fileName: String): Uri {
-        val file = File(context.getExternalFilesDir("documents"), fileName)
+        val file = File(context.getExternalFilesDir(AppEnvironment.DOCUMENTS), fileName)
         return FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
     }
 }
