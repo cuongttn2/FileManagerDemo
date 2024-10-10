@@ -1,0 +1,22 @@
+name: AndroidBuild
+on:
+  pull_request :
+    branches: [ master_cicd ]
+  push :
+    branches: [ master_cicd ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.1
+
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4.4.0
+
+      - name: Upload a Build Artifact
+        uses: actions/upload-artifact@v4.4.3
+        with:
+          name: FileManagerDemo.apk
+          path: app/build/output/apk/app-debug.apk
